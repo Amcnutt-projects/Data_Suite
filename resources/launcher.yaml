@@ -1,0 +1,8 @@
+applications:
+  - name: SQL Dumper
+    path: mwc\\sql_dumper\\sql_dumper.py
+    description: This application executes and writes query results to a file. This speeds up exporting data significantly, compared to the mysql export function.
+
+  - name: App 2
+    path: mwc\\app2\\app2.py
+    description: This application is No. 2
