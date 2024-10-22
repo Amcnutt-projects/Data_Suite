@@ -1,6 +1,5 @@
 import sys
 import os
-import time
 
 # Get the current working directory
 original_dir = os.getcwd()
@@ -24,7 +23,6 @@ from mwc.sql_dumper.sql_dumper import APP_SQL_Dumper
 
 from PyQt6.QtWidgets import (
     QApplication,
-    QLabel,
     QMainWindow,
     QPushButton,
     QVBoxLayout,
