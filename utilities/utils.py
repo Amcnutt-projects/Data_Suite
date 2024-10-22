@@ -26,9 +26,9 @@ def check_connection(credentials) -> bool:
         if connection.is_connected():
             connection.close()
             return True
-        
         else:
             return False
         
     except Exception as e:
+        print(e)
         return False

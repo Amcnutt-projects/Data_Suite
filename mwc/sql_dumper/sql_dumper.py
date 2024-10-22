@@ -4,28 +4,32 @@ from PyQt6.QtWidgets import (
     QWidget,
     QLabel,
     QMessageBox,
-    QComboBox,
     QPushButton,
     QTableWidget,
-    QTextBrowser,
     QTextEdit,
     QApplication,
     QVBoxLayout,
     QListWidget,
     QHBoxLayout,
-    QListWidgetItem
+    QListWidgetItem,
+    QProgressDialog,
+    QTableWidgetItem,
+    QFileDialog
 )
+
+from PyQt6.QtCore import Qt
 
 import sys
 import os
 import pandas as pd
-import mysql.connector
 
 if getattr(sys, 'frozen', False):
     from utilities.utils import apply_style_sheet, load_credentials, check_connection
+    from query_handler.query_thread import QueryThread
 else:
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
     from utilities.utils import apply_style_sheet, load_credentials, check_connection
+    from query_handler.query_thread import QueryThread
 
 class APP_SQL_Dumper(QMainWindow):
     def __init__(self):
@@ -73,7 +77,7 @@ class APP_SQL_Dumper(QMainWindow):
         right_layout.addWidget(self.sql_text_area)
 
         # Execute button
-        self.execute_button = QPushButton("Execute")
+        self.execute_button = QPushButton("Execute", self)
         self.execute_button.clicked.connect(self.execute_query)
         right_layout.addWidget(self.execute_button)
 
@@ -110,6 +114,7 @@ class APP_SQL_Dumper(QMainWindow):
         self.results_df = pd.DataFrame()        # Placeholder for results
 
         self.populate_list()
+        self.query_thread = None  # Initialize the query thread variable
 
     def center_gui(self):
         qr = self.frameGeometry()
@@ -147,11 +152,110 @@ class APP_SQL_Dumper(QMainWindow):
                 "background-color: 	rgb(255, 102, 102); padding: 4px 0px 4px 0px; margin: 0px 0px 0px 0px; color: black;"
             )
 
-    def execute_query():
-        pass
+    def execute_query(self):
+        if not self.selected_connection:
+            QMessageBox.warning(self, "Warning", "Please select a connection first.")
+            return
 
-    def save_results():
-        pass
+        query = self.sql_text_area.toPlainText()
+        if not query:
+            QMessageBox.warning(self, "Warning", "Please enter a SQL query.")
+            return
+
+        # Show progress dialog
+        self.progress_dialog = QProgressDialog("Executing query...", "Cancel", 0, 0, self)
+        self.progress_dialog.setWindowModality(Qt.WindowModality.WindowModal)  # Correct usage
+        self.progress_dialog.setRange(0, 0)  # Indeterminate progress
+        self.progress_dialog.show()
+
+        # Disable buttons during execution
+        self.execute_button.setEnabled(False)
+        self.test_connection_button.setEnabled(False)
+
+        # Start the query execution in a separate thread
+        self.query_thread = QueryThread(query, self.credentials[self.selected_connection])
+        self.query_thread.finished_signal.connect(self.on_query_finished)
+        self.query_thread.start()
+
+    def on_query_finished(self, data):
+        results, column_names = data  # Unpack the results and column names
+        print("Query thread has finished execution.")
+
+        # Store results in self.results_df
+        self.results_df = pd.DataFrame(results, columns=column_names)
+
+        # Populate the results table with the query results
+        self.populate_results_table(results, column_names)
+
+
+    def populate_results_table(self, results, column_names):
+        self.progress_dialog.close()
+        self.execute_button.setEnabled(True)
+        self.test_connection_button.setEnabled(True)
+
+        self.results_table.setRowCount(0)  # Clear previous results
+        self.results_table.setColumnCount(0)
+
+        # Check if there are results
+        if results:
+            # Set the column count based on the number of columns in the first result
+            self.results_table.setColumnCount(len(column_names))
+
+            # Set headers based on the column names
+            self.results_table.setHorizontalHeaderLabels(column_names)
+
+        max_rows = 100  
+        total_rows = len(results)
+
+        for row_index, row in enumerate(results):
+            if row_index >= max_rows:  # Stop after the first 100 rows
+                break
+            row_position = self.results_table.rowCount()
+            self.results_table.insertRow(row_position)
+            for column, data in enumerate(row):
+                self.results_table.setItem(row_position, column, QTableWidgetItem(str(data)))
+
+            self.result_label.setText("Output Preview (First 100 rows of " + str(total_rows) + " rows)")
+        else:
+            self.result_label.setText("No results returned.")
+
+    def save_results(self):
+        if self.results_df.empty:
+            QMessageBox.warning(self, "Warning", "No results to save.")
+            return
+
+        options = QFileDialog.Option(0)  # You can specify options if needed
+        file_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Save Results",
+            "",
+            "CSV Files (*.csv);;Text Files (*.txt);;All Files (*)",
+            options=options,
+        )
+        if file_path:
+            try:
+                # Define the chunk size
+                chunk_size = 10000  # Adjust this size as needed
+
+                # Create a progress dialog
+                num_chunks = (len(self.results_df) // chunk_size) + 1
+                progress = QProgressDialog("Exporting data...", "Cancel", 0, num_chunks, self)
+                progress.setWindowModality(Qt.WindowModality.WindowModal) 
+                progress.show()
+
+                # Save in chunks
+                for i, chunk in enumerate(range(0, len(self.results_df), chunk_size)):
+                    self.results_df.iloc[chunk:chunk + chunk_size].to_csv(file_path, mode='a', header=(i == 0), index=False)
+
+                    # Update progress dialog
+                    progress.setValue(i)
+                    if progress.wasCanceled():
+                        break
+
+                progress.setValue(num_chunks)  # Ensure the progress dialog is complete
+                QMessageBox.information(self, "Success", "Results saved successfully.")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save results: {e}")
 
     def reset(self):
         self.sql_text_area.clear()
