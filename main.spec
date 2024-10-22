@@ -8,7 +8,8 @@ a = Analysis(
     datas=[
         ('resources', 'resources'),
         ('utilities','utilities'),
-        ('mwc','mwc')
+        ('mwc','mwc'),
+        ('query_handler','query_handler')
         ],
     hiddenimports=[],
     hookspath=[],
